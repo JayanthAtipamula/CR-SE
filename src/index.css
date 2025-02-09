@@ -1,0 +1,17 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --primary: #FF3D3D;
+  }
+  
+  body {
+    @apply antialiased scroll-smooth;
+  }
+}
+
+.glass {
+  @apply bg-white/70 dark:bg-gray-900/70 backdrop-blur-lg;
+}
