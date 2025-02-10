@@ -5,7 +5,9 @@ import { skills } from '../data/skills';
 import { quizData } from '../data/quizData';
 import QuizProgress from '../components/QuizProgress';
 import LoadingScreen from '../components/LoadingScreen';
-import { initCashfreePayment } from '../utils/cashfree';
+import { initCashfreePayment } from '../utils/payment';
+import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { db, auth } from "../config/firebase";
 
 export default function QuizFlow() {
   const { skillId } = useParams();
@@ -65,20 +67,50 @@ export default function QuizFlow() {
 
     try {
       const paymentData = {
-        orderId: `ORDER_${Date.now()}_${Math.random().toString(36).slice(2)}`,
-        orderAmount: 499,
+        orderId: `QUIZ_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+        amount: 499,
         customerName: formData.name,
         customerEmail: formData.email,
         customerPhone: formData.mobile,
-        quizAttemptId: ''
+        quizAttemptId: `${skillId}_${Date.now()}`
       };
 
-      await initCashfreePayment(paymentData);
+      console.log('Initiating payment with data:', paymentData); // Debug log
+
+      const result = await initCashfreePayment(paymentData);
+      
+      console.log('Payment result:', result); // Debug log
+
+      // Handle successful payment
+      if (result.success) {
+        try {
+          // Save certificate details to Firebase
+          const certificateRef = doc(db, 'certificates', paymentData.orderId);
+          await setDoc(certificateRef, {
+            userId: auth.currentUser?.uid,
+            skillId,
+            score: calculateScore(),
+            customerName: formData.name,
+            customerEmail: formData.email,
+            customerPhone: formData.mobile,
+            createdAt: serverTimestamp(),
+            paymentId: result.status.cfPaymentId,
+            amount: 499
+          });
+
+          // Navigate to success page
+          navigate(`/certificate/${paymentData.orderId}`);
+        } catch (firebaseError) {
+          console.error('Firebase error:', firebaseError);
+          alert('Payment successful but failed to save certificate. Please contact support.');
+        }
+      }
     } catch (error) {
+      console.error('Payment error:', error); // Debug log
       if (error instanceof Error) {
         alert(error.message);
       } else {
-        alert('Payment initialization failed. Please try again later.');
+        alert('Payment failed. Please try again later.');
       }
     } finally {
       setIsProcessing(false);

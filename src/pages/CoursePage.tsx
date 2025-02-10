@@ -1,7 +1,19 @@
 import { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { Clock, Star, Users, CheckCircle, ChevronDown, ChevronUp } from 'lucide-react';
-import { courses } from '../components/Courses';
+import { db } from '../config/firebase';
+import { doc, getDoc } from 'firebase/firestore';
+
+interface Course {
+  id: string;
+  title: string;
+  image: string;
+  description: string;
+  duration: string;
+  rating: number;
+  students: number;
+  price: number;
+}
 
 interface Curriculum {
   title: string;
@@ -37,13 +49,94 @@ const curriculum: Curriculum[] = [
 
 export default function CoursePage() {
   const { courseId } = useParams();
+  const [course, setCourse] = useState<Course | null>(null);
+  const [loading, setLoading] = useState(true);
   const [openSection, setOpenSection] = useState<number | null>(null);
   
+  const navigate = useNavigate();
+
   useEffect(() => {
+    const fetchCourse = async () => {
+      if (!courseId) return;
+      
+      try {
+        const courseRef = doc(db, 'courses', courseId);
+        const courseSnap = await getDoc(courseRef);
+        
+        if (courseSnap.exists()) {
+          setCourse({ id: courseSnap.id, ...courseSnap.data() } as Course);
+        }
+      } catch (error) {
+        console.error('Error fetching course:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchCourse();
     window.scrollTo(0, 0);
   }, [courseId]);
 
-  const course = courses.find(c => c.id === courseId);
+  const handleEnrollment = async () => {
+    try {
+      if (!course) return;
+
+      const response = await fetch('http://localhost:5000/api/payment/create-order', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          courseId: course.id,
+          amount: course.price,
+          userId: 'user123', // Replace with actual user ID from authentication
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        // Initialize Cashfree checkout
+        const cashfree = new window.Cashfree({
+          mode: 'sandbox', // or 'production'
+        });
+
+        cashfree.init({
+          paymentSessionId: data.paymentSessionId,
+          orderToken: data.order.order_token,
+        });
+
+        cashfree.redirect();
+
+        // Handle successful payment
+        cashfree.on('payment_success', async (data) => {
+          // Verify payment on backend
+          const verifyResponse = await fetch('http://localhost:5000/api/payment/verify-payment', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              orderId: data.orderId,
+            }),
+          });
+
+          const verifyData = await verifyResponse.json();
+
+          if (verifyData.success) {
+            // Navigate to success page or course content
+            navigate(`/course/${course.id}/content`);
+          }
+        });
+      }
+    } catch (error) {
+      console.error('Payment error:', error);
+    }
+  };
+
+  if (loading) {
+    return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+  }
   
   if (!course) {
     return <div className="min-h-screen flex items-center justify-center">Course not found</div>;
@@ -133,7 +226,10 @@ export default function CoursePage() {
 
                 <div className="p-5">
                   <div className="text-2xl font-bold mb-4 text-primary">${course.price}</div>
-                  <button className="w-full py-3 px-6 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors mb-6">
+                  <button 
+                    onClick={handleEnrollment}
+                    className="w-full py-3 px-6 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors mb-6"
+                  >
                     Enroll Now
                   </button>
 
